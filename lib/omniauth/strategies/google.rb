@@ -8,23 +8,19 @@ module OmniAuth
     # Usage:
     #    use OmniAuth::Strategies::Google, 'consumerkey', 'consumersecret'
     class Google < OmniAuth::Strategies::OAuth
-      def initialize(app, consumer_key=nil, consumer_secret=nil, options={}, &block)
-        client_options = {
-          :access_token_path => '/accounts/OAuthGetAccessToken',
-          :authorize_path => '/accounts/OAuthAuthorizeToken',
-          :request_token_path => '/accounts/OAuthGetRequestToken',
-          :site => 'https://www.google.com',
-        }
-        google_contacts_auth = 'www.google.com/m8/feeds'
-        options[:scope] ||= "https://#{google_contacts_auth}"
-        options[:scope] << " https://#{google_contacts_auth}" unless options[:scope] =~ %r[http[s]?:\/\/#{google_contacts_auth}]
-        options[:client_options] = client_options
+      option :client_options, {
+        :access_token_path => '/accounts/OAuthGetAccessToken',
+        :authorize_path => '/accounts/OAuthAuthorizeToken',
+        :request_token_path => '/accounts/OAuthGetRequestToken',
+        :site => 'https://www.google.com'
+      }
 
-        super(app, consumer_key, consumer_secret, options, &block)
-      end
+      GOOGLE_CONTACTS_AUTH = "www.google.com/m8/feeds"
+
+      option :scope, "https://#{GOOGLE_CONTACTS_AUTH}"
 
       uid do
-        user_info['uid']
+        user_info['email']
       end
       
       info do
@@ -41,11 +37,7 @@ module OmniAuth
         name = user_hash['feed']['author'].first['name']['$t']
         name = email if name.strip == '(unknown)'
 
-        {
-          'email' => email,
-          'uid' => email,
-          'name' => name,
-        }
+        { 'email' => email, 'name' => name, }
       end
 
       def user_hash
@@ -61,21 +53,21 @@ module OmniAuth
 
       # Monkeypatch OmniAuth to pass the scope and authorize_params in the consumer.get_request_token call
       def request_phase
+        options[:scope] += " https://#{GOOGLE_CONTACTS_AUTH}" unless options[:scope] =~ %r[http[s]?:\/\/#{GOOGLE_CONTACTS_AUTH}]
         request_options = {:scope => options[:scope]}
         request_options.merge!(options[:authorize_params])
       
         request_token = consumer.get_request_token({:oauth_callback => callback_url}, request_options)
         session['oauth'] ||= {}
         session['oauth'][name.to_s] = {'callback_confirmed' => request_token.callback_confirmed?, 'request_token' => request_token.token, 'request_secret' => request_token.secret}
-        r = Rack::Response.new
+      
+        
       
         if request_token.callback_confirmed?
-          r.redirect(request_token.authorize_url)
+          redirect request_token.authorize_url
         else
-          r.redirect(request_token.authorize_url(:oauth_callback => callback_url))
+          redirect request_token.authorize_url(:oauth_callback => callback_url)
         end
-      
-        r.finish
       
         rescue ::Timeout::Error => e
           fail!(:timeout, e)
